@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "publicar": "cd .. && git subtree split --prefix painel/public -b gh-pages && git push -f origin gh-pages"
+    "publicar": "node ferramentas/versionar.mjs && cd .. && git add painel/public && git commit -q -m \"Publica versão do painel\" ; git subtree split --prefix painel/public -b gh-pages && git push -f origin gh-pages"
   },
   "engines": {
     "node": ">=18"

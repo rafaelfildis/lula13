@@ -5,8 +5,8 @@
 // - câmera e microfone: WebRTC entre os navegadores via Trystero (sinalização por relays Nostr).
 
 import { joinRoom, selfId } from "https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm";
-import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js";
-import { criarCanal } from "./lib/mensageiro.js";
+import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js?v=202610241622";
+import { criarCanal } from "./lib/mensageiro.js?v=202610241622";
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, texto) => {
@@ -419,6 +419,14 @@ function anunciarEleitos(snap) {
 }
 
 iniciarApuracao();
+
+// Quem deixa a página aberta por horas é avisado quando sai uma versão nova
+setInterval(async () => {
+  try {
+    const v = (await (await fetch("versao.txt?t=" + Date.now(), { cache: "no-store" })).text()).trim();
+    if (v && window.VERSAO_SITE && v !== window.VERSAO_SITE) avisar("Saiu uma versão nova do painel. Recarregue a página para continuar no chat com todo mundo.", 0);
+  } catch {}
+}, 5 * 60 * 1000);
 
 // ======================= apuração e mapa =======================
 async function carregarMapa() {

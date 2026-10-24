@@ -18,6 +18,16 @@ const el = (tag, cls, texto) => {
 const fmt = (n) => Number(n || 0).toLocaleString("pt-BR");
 const fmtPct1 = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const fmtPct = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Estrela do PT ao lado do nome de cada pessoa (símbolo #estrela-pt no index.html)
+const estrelaPT = () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "estrela");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#estrela-pt");
+  svg.append(use);
+  return svg;
+};
 const iniciais = (nome) => nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
 const params = new URLSearchParams(location.search);
@@ -46,7 +56,7 @@ const TURN = [
 ];
 const AGUARDANDO = "Aguardando o início da apuração · divulgação a partir das 17h (Brasília)";
 
-const PALETA = ["#ef6a4c", "#3d8bfd", "#f5b83d", "#33c3a0", "#b07cf0", "#9aa5b1"];
+const PALETA = ["#ff3b4e", "#3d8bfd", "#f5b83d", "#33c3a0", "#b07cf0", "#9aa5b1"];
 const CORES = ["#ff8a65", "#4fc3f7", "#aed581", "#ffd54f", "#ba68c8", "#4db6ac", "#f06292", "#9575cd", "#e57373", "#81c784"];
 const corDoId = (id) => CORES[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % CORES.length];
 
@@ -68,6 +78,30 @@ let sala, canal;
 const vistoEm = new Map(); // peerId -> último aviso de presença
 
 // ======================= entrada =======================
+// Chuva de estrelas do PT atrás do cartão de entrada
+(function chuvaDeEstrelas() {
+  const caixa = $("#chuva");
+  const quantas = innerWidth < 600 ? 20 : 36;
+  for (let i = 0; i < quantas; i++) {
+    const gota = estrelaPT();
+    gota.classList.add("gota");
+    if (Math.random() < 0.3) gota.classList.add("vermelha");
+    const dur = 7 + Math.random() * 9;
+    const props = {
+      "--x": `${Math.random() * 100}%`,
+      "--y": `${Math.random() * 100}%`,
+      "--tam": `${16 + Math.random() * 48}px`,
+      "--op": (0.35 + Math.random() * 0.6).toFixed(2),
+      "--dur": `${dur.toFixed(1)}s`,
+      "--atraso": `${(-Math.random() * dur).toFixed(1)}s`, // negativo: já começa espalhada pela tela
+      "--deriva": `${(Math.random() * 16 - 8).toFixed(1)}vw`,
+      "--giro": `${Math.round(Math.random() * 540 - 270)}deg`,
+    };
+    for (const [k, v] of Object.entries(props)) gota.style.setProperty(k, v);
+    caixa.append(gota);
+  }
+})();
+
 try { $("#nome").value = localStorage.getItem("apuracao-nome") || ""; } catch {}
 
 $("#form-entrada").addEventListener("submit", (e) => {
@@ -213,6 +247,7 @@ function itemMsg(m) {
   } else {
     const quem = el("span", "quem", m.nome);
     quem.style.color = m.cor;
+    quem.append(estrelaPT());
     li.append(quem, document.createTextNode(m.texto));
     li.append(el("span", "hora", new Date(m.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })));
   }
@@ -267,6 +302,7 @@ function renderListaOnline() {
     av.style.background = u.cor;
     av.setAttribute("aria-hidden", "true");
     const nm = el("span", "nm", u.nome);
+    nm.append(estrelaPT());
     if (u.id === estado.eu.id) nm.append(el("span", "voce", "(você)"));
     const midia = el("span", "midia");
     const cam = el("span", u.cam ? "" : "off", "📷");
@@ -378,7 +414,9 @@ function atualizarTile(id) {
     const avatar = el("div", "avatar", iniciais(u.nome));
     avatar.style.color = u.cor;
     const rotulo = el("div", "rotulo");
-    rotulo.append(el("span", "nm", souEu ? `${u.nome} (você)` : u.nome), el("span", "mic"));
+    const nomeTile = el("span", "nm", souEu ? `${u.nome} (você)` : u.nome);
+    nomeTile.append(estrelaPT());
+    rotulo.append(nomeTile, el("span", "mic"));
     tile.append(video, avatar, rotulo);
     if (souEu) $("#videos").prepend(tile); else $("#videos").append(tile);
   }

@@ -255,7 +255,42 @@ function renderPresenca() {
   $("#online").textContent = canal && !canal.conectado()
     ? "Reconectando ao chat…"
     : `${n} ${n === 1 ? "pessoa" : "pessoas"} na sala`;
+  if (!$("#lista-online").hidden) renderListaOnline();
 }
+
+// Lista de quem está na sala (você primeiro, depois em ordem alfabética)
+function renderListaOnline() {
+  const outros = [...estado.usuarios.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const itens = [estado.eu, ...outros].map((u) => {
+    const li = el("li", "pessoa");
+    const av = el("span", "av", iniciais(u.nome));
+    av.style.background = u.cor;
+    av.setAttribute("aria-hidden", "true");
+    const nm = el("span", "nm", u.nome);
+    if (u.id === estado.eu.id) nm.append(el("span", "voce", "(você)"));
+    const midia = el("span", "midia");
+    const cam = el("span", u.cam ? "" : "off", "📷");
+    cam.title = u.cam ? "Câmera ligada" : "Câmera desligada";
+    const mic = el("span", u.mic ? "" : "off", "🎙️");
+    mic.title = u.mic ? "Microfone ligado" : "Microfone desligado";
+    midia.setAttribute("aria-label", `${u.cam ? "câmera ligada" : "câmera desligada"}, ${u.mic ? "microfone ligado" : "microfone desligado"}`);
+    midia.append(cam, mic);
+    li.append(av, nm, midia);
+    return li;
+  });
+  $("#pessoas").replaceChildren(...itens);
+  if (!outros.length) $("#pessoas").append(el("li", "vazio", "Só você por enquanto. Compartilhe o link para chamar a galera!"));
+}
+
+function alternarListaOnline(abrir = $("#lista-online").hidden) {
+  $("#lista-online").hidden = !abrir;
+  $("#online").setAttribute("aria-expanded", String(abrir));
+  if (abrir) renderListaOnline();
+}
+$("#online").addEventListener("click", () => alternarListaOnline());
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#lista-online").hidden) { alternarListaOnline(false); $("#online").focus(); }
+});
 
 // ======================= câmera e microfone =======================
 async function ativarMidia() {
@@ -291,6 +326,7 @@ function publicarMidia() {
   estado.eu.mic = !!a?.enabled;
   anunciar("presenca");
   renderControles();
+  renderPresenca();
   atualizarTile(estado.eu.id);
 }
 

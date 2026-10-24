@@ -110,7 +110,22 @@ button { font: inherit; cursor: pointer; touch-action: manipulation; }
 /* ---------- social ---------- */
 .col-social { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--borda); background: var(--painel); }
 .social-topo { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--borda); }
-.online { display: block; font-size: 12px; color: var(--texto-2); }
+.online { display: inline-flex; align-items: center; gap: 4px; margin: 2px 0 0 -6px; padding: 3px 6px; border: 0; border-radius: 6px; background: none; font-size: 12px; color: var(--texto-2); }
+.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #69f0ae; margin-right: 2px; }
+.online::after { content: ""; width: 6px; height: 6px; margin: -3px 0 0 4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .2s ease; }
+.online:hover { background: var(--painel-2); color: var(--texto); }
+.online[aria-expanded="true"] { color: var(--texto); }
+.online[aria-expanded="true"]::after { transform: translateY(3px) rotate(225deg); }
+.social-topo strong { display: block; }
+.lista-online { flex: none; border-bottom: 1px solid var(--borda); background: var(--painel-2); max-height: 40vh; overflow-y: auto; }
+.lista-online ul { list-style: none; margin: 0; padding: 6px 8px; }
+.pessoa { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+.pessoa .av { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #111; }
+.pessoa .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pessoa .voce { color: var(--texto-2); font-size: 12px; margin-left: 4px; }
+.pessoa .midia { display: flex; gap: 6px; font-size: 13px; }
+.pessoa .midia .off { opacity: .3; filter: grayscale(1); }
+.lista-online .vazio { color: var(--texto-2); font-size: 13px; padding: 4px 8px 8px; }
 .controles { display: flex; gap: 8px; }
 .convite { margin: 12px; padding: 12px; border: 1px dashed var(--destaque); border-radius: var(--raio); background: rgba(255, 213, 79, .06); font-size: 13px; }
 .convite p { margin: 0 0 10px; }

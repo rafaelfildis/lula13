@@ -10,10 +10,11 @@ Entrada só com nome, sem cadastro. Antes da primeira urna apurada, o painel fic
 Tudo roda no navegador, por isso o site pode ficar no GitHub Pages, sem servidor:
 
 - **Resultados:** `public/lib/tse.js` lê os JSON públicos de resultados.tse.jus.br (o TSE libera CORS) e atualiza a cada 30 s.
-- **Sala ao vivo:** [Trystero](https://github.com/dmotz/trystero) conecta os navegadores entre si. Eles se encontram por relays públicos da rede Nostr; depois chat, câmera e microfone vão direto de um navegador para o outro (WebRTC). Quem chega recebe as últimas mensagens de quem já está na sala.
+- **Quem está na sala e chat:** `public/lib/mensageiro.js` usa dois brokers MQTT públicos (EMQX e Mosquitto) por WebSocket. Funciona em qualquer rede (4G, Wi-Fi de empresa), porque não depende de conexão direta entre aparelhos. Todo mundo, no celular ou no computador, fica na mesma sala; em `localhost` o site usa uma sala de testes à parte. Quem chega recebe as últimas 50 mensagens de quem já está lá.
+- **Câmera e microfone:** [Trystero](https://github.com/dmotz/trystero) conecta os navegadores por WebRTC (sinalização por relays Nostr). Entre algumas redes a conexão direta falha; para esses casos, preencha `TURN` no topo de `public/app.js` com as credenciais de um serviço TURN (ex.: conta gratuita em metered.ca).
 - **Mapa:** `public/brasil-ufs.json`, gerado por `ferramentas/gerar-mapa.mjs` a partir do GeoJSON dos estados (click_that_hood).
 
-Parâmetros de URL: `?sala=nome` abre uma sala separada; `?turno=1` mostra os resultados reais do 1º turno.
+Parâmetro de URL: `?turno=1` mostra os resultados reais do 1º turno.
 
 ## Rodar localmente
 
@@ -31,7 +32,8 @@ npm run publicar
 
 ## Limites do protótipo
 
-- **Todos se conectam com todos (malha P2P).** Funciona bem com algumas dezenas de pessoas por sala; para mais gente, divida em salas (`?sala=`) ou use um servidor de mídia (LiveKit, mediasoup). Máximo de 8 câmeras abertas.
-- Só usa STUN: em algumas redes (4G, redes corporativas) a conexão direta falha e seria preciso um servidor TURN.
+- **Vídeo em malha P2P:** cada câmera é enviada direto para cada pessoa. Máximo de 8 câmeras abertas; para muita gente com vídeo, use um servidor de mídia (LiveKit, mediasoup).
+- **Sem TURN configurado**, o vídeo pode não aparecer entre algumas redes (o chat e a lista de pessoas continuam funcionando).
+- Os brokers MQTT são públicos e gratuitos, sem garantia de disponibilidade; qualquer um que conheça o tópico pode ler e publicar nele.
 - Não há moderação, denúncia nem bloqueio no chat, e o histórico só existe enquanto houver alguém na sala.
 - Cada visitante consulta o TSE diretamente (~35 arquivos a cada 30 s), assim como o app oficial.

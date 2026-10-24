@@ -1,9 +1,12 @@
 // Painel da apuração: mapa (esquerda) + sala ao vivo com chat, câmera e microfone (direita).
-// Roda 100% no navegador (GitHub Pages): os resultados vêm direto do TSE e a sala é P2P via Trystero
-// (os navegadores se encontram por relays públicos Nostr e depois conversam direto por WebRTC).
+// Roda 100% no navegador (GitHub Pages):
+// - resultados: direto dos JSON públicos do TSE;
+// - quem está na sala e o chat: brokers MQTT públicos (lib/mensageiro.js), que funcionam em qualquer rede;
+// - câmera e microfone: WebRTC entre os navegadores via Trystero (sinalização por relays Nostr).
 
 import { joinRoom, selfId } from "https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm";
 import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js";
+import { criarCanal } from "./lib/mensageiro.js";
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, texto) => {
@@ -19,10 +22,17 @@ const iniciais = (nome) => nome.split(" ").filter(Boolean).slice(0, 2).map((p) =
 
 const params = new URLSearchParams(location.search);
 const TURNO = Number(params.get("turno")) || 2;
-const SALA = (params.get("sala") || "principal").slice(0, 40);
+// Uma sala só para todo mundo (celular e computador). Rodando em localhost, usa uma sala de testes à parte.
+const SALA = ["localhost", "127.0.0.1"].includes(location.hostname) ? "testes-local" : "principal";
 const APP_ID = "lula13-apuracao-2026";
 const INTERVALO_TSE = 30000;
 const MAX_CAMERAS = 8; // malha P2P: acima disso cada navegador envia vídeo demais
+const PRESENCA_MS = 15000; // cada um avisa "estou aqui" a cada 15 s
+const AUSENTE_MS = 45000; // sem aviso por 45 s = saiu
+// Servidor TURN: retransmite o vídeo quando a conexão direta entre redes falha (4G, CGNAT, Wi-Fi de empresa).
+// Crie uma conta gratuita (ex.: metered.ca/stun-turn) e preencha, por exemplo:
+//   [{ urls: ["turn:global.relay.metered.ca:80", "turns:global.relay.metered.ca:443?transport=tcp"], username: "...", credential: "..." }]
+const TURN = [];
 const AGUARDANDO = "Aguardando o início da apuração · divulgação a partir das 17h (Brasília)";
 
 const PALETA = ["#ef6a4c", "#3d8bfd", "#f5b83d", "#33c3a0", "#b07cf0", "#9aa5b1"];
@@ -43,7 +53,8 @@ const estado = {
   naoLidas: 0,
 };
 const celular = matchMedia("(max-width: 860px)");
-let sala, acoes;
+let sala, canal;
+const vistoEm = new Map(); // peerId -> último aviso de presença
 
 // ======================= entrada =======================
 try { $("#nome").value = localStorage.getItem("apuracao-nome") || ""; } catch {}
@@ -66,67 +77,110 @@ function entrar(nome) {
   carregarMapa().then(() => estado.apuracao && receberApuracao(estado.apuracao));
   adicionarMsg({ id: "local-entrou", sistema: true, texto: "Você entrou na sala. Procurando quem está assistindo…", em: Date.now() });
 
-  sala = joinRoom({ appId: APP_ID }, "sala-" + SALA);
-  acoes = {
-    perfil: sala.makeAction("perfil"),
-    msg: sala.makeAction("msg"),
-    historico: sala.makeAction("historico"),
-  };
+  // ---- presença e chat: MQTT ----
+  canal = criarCanal(`lula13-apuracao-2026/v1/${SALA}`, {
+    aoReceber: tratarPacote,
+    aoConectar: () => anunciar("oi"),
+    aoMudarConexao: renderPresenca,
+    despedida: { t: "tchau", id: selfId },
+  });
+  setInterval(() => anunciar("presenca"), PRESENCA_MS);
+  setInterval(removerAusentes, 5000);
+  window.addEventListener("pagehide", () => canal.fechar({ t: "tchau", id: selfId }));
 
+  // ---- câmera e microfone: WebRTC ----
+  sala = joinRoom({ appId: APP_ID, ...(TURN.length && { turnConfig: TURN }) }, "sala-" + SALA);
   sala.onPeerJoin = (id) => {
-    acoes.perfil.send(perfilPublico(), { target: id });
-    acoes.historico.send(estado.mensagens.filter((m) => !m.sistema).slice(-50), { target: id });
     if (estado.stream) sala.addStream(estado.stream, { target: id });
   };
   sala.onPeerLeave = (id) => {
-    const u = estado.usuarios.get(id);
-    estado.usuarios.delete(id);
     estado.streams.delete(id);
     pararMedidor(id);
-    document.getElementById("tile-" + id)?.remove();
-    if (u) adicionarMsg({ id: "saiu-" + id + Date.now(), sistema: true, texto: `${u.nome} saiu`, em: Date.now() });
-    renderPresenca();
+    atualizarTile(id);
   };
   sala.onPeerStream = (stream, id) => {
     estado.streams.set(id, stream);
     atualizarTile(id);
   };
-
-  acoes.perfil.onMessage = (p, { peerId }) => {
-    const nome = String(p?.nome ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
-    if (nome.length < 2) return;
-    const novo = !estado.usuarios.has(peerId);
-    estado.usuarios.set(peerId, { id: peerId, nome, cor: corDoId(peerId), cam: !!p.cam, mic: !!p.mic });
-    if (novo) adicionarMsg({ id: "entrou-" + peerId, sistema: true, texto: `${nome} entrou na sala`, em: Date.now() });
-    renderPresenca();
-    atualizarTile(peerId);
-  };
-  acoes.msg.onMessage = (m, { peerId }) => {
-    const u = estado.usuarios.get(peerId);
-    const texto = String(m?.texto ?? "").trim().slice(0, 500);
-    if (!texto) return;
-    adicionarMsg({ id: String(m.id), de: peerId, nome: u?.nome ?? "Alguém", cor: corDoId(peerId), texto, em: Date.now() });
-  };
-  // Quem já estava na sala manda as últimas mensagens para quem acabou de chegar
-  acoes.historico.onMessage = (lista) => {
-    if (!Array.isArray(lista)) return;
-    let mudou = false;
-    for (const m of lista.slice(-50)) {
-      if (!m?.id || estado.mensagens.some((x) => x.id === m.id)) continue;
-      const texto = String(m.texto ?? "").trim().slice(0, 500);
-      const nome = String(m.nome ?? "").trim().slice(0, 30);
-      if (!texto || !nome) continue;
-      estado.mensagens.push({ id: String(m.id), de: String(m.de), nome, cor: corDoId(String(m.de)), texto, em: Number(m.em) || Date.now() });
-      mudou = true;
-    }
-    if (mudou) {
-      estado.mensagens.sort((a, b) => a.em - b.em);
-      renderMensagens();
-    }
-  };
 }
 
-const perfilPublico = () => ({ nome: estado.eu.nome, cam: estado.eu.cam, mic: estado.eu.mic });
+const anunciar = (t) => canal?.publicar({ t, id: selfId, nome: estado.eu.nome, cam: estado.eu.cam, mic: estado.eu.mic });
+const historicoRespondido = new Set(); // ids de quem já recebeu histórico de alguém
+
+function tratarPacote(m) {
+  const id = String(m.id ?? "").slice(0, 40);
+  if (!id) return;
+  switch (m.t) {
+    case "oi":
+    case "presenca": {
+      if (id === selfId) return;
+      const nome = String(m.nome ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
+      if (nome.length < 2) return;
+      const novo = !estado.usuarios.has(id);
+      vistoEm.set(id, Date.now());
+      estado.usuarios.set(id, { id, nome, cor: corDoId(id), cam: !!m.cam, mic: !!m.mic });
+      if (novo) adicionarMsg({ id: "entrou-" + id, sistema: true, texto: `${nome} entrou na sala`, em: Date.now() });
+      if (m.t === "oi") {
+        // quem chegou precisa saber de mim já, sem esperar o próximo aviso
+        anunciar("presenca");
+        // um (só) de quem já está na sala manda as últimas mensagens para o recém-chegado
+        setTimeout(() => {
+          if (historicoRespondido.has(id)) return;
+          const msgs = estado.mensagens.filter((x) => !x.sistema).slice(-50).map(({ id, de, nome, texto, em }) => ({ id, de, nome, texto, em }));
+          if (msgs.length) canal.publicar({ t: "historico", id: selfId, para: id, msgs });
+        }, 300 + Math.random() * 1500);
+      }
+      renderPresenca();
+      atualizarTile(id);
+      break;
+    }
+    case "tchau":
+      if (id !== selfId) removerUsuario(id);
+      break;
+    case "msg": {
+      if (id === selfId) return; // já mostrado ao enviar
+      const texto = String(m.texto ?? "").trim().slice(0, 500);
+      const u = estado.usuarios.get(id);
+      if (!texto || estado.mensagens.some((x) => x.id === m.mid)) return;
+      adicionarMsg({ id: String(m.mid), de: id, nome: u?.nome ?? String(m.nome ?? "Alguém").slice(0, 30), cor: corDoId(id), texto, em: Date.now() });
+      break;
+    }
+    case "historico": {
+      historicoRespondido.add(String(m.para));
+      if (m.para !== selfId || !Array.isArray(m.msgs)) return;
+      let mudou = false;
+      for (const x of m.msgs.slice(-50)) {
+        if (!x?.id || estado.mensagens.some((y) => y.id === x.id)) continue;
+        const texto = String(x.texto ?? "").trim().slice(0, 500);
+        const nome = String(x.nome ?? "").trim().slice(0, 30);
+        if (!texto || !nome) continue;
+        estado.mensagens.push({ id: String(x.id), de: String(x.de), nome, cor: corDoId(String(x.de)), texto, em: Number(x.em) || Date.now() });
+        mudou = true;
+      }
+      if (mudou) {
+        estado.mensagens.sort((a, b) => a.em - b.em);
+        renderMensagens();
+      }
+      break;
+    }
+  }
+}
+
+function removerUsuario(id) {
+  const u = estado.usuarios.get(id);
+  if (!u) return;
+  estado.usuarios.delete(id);
+  vistoEm.delete(id);
+  estado.streams.delete(id);
+  pararMedidor(id);
+  document.getElementById("tile-" + id)?.remove();
+  adicionarMsg({ id: "saiu-" + id + Date.now(), sistema: true, texto: `${u.nome} saiu`, em: Date.now() });
+  renderPresenca();
+}
+
+function removerAusentes() {
+  for (const [id, quando] of vistoEm) if (Date.now() - quando > AUSENTE_MS) removerUsuario(id);
+}
 
 let avisoTimer;
 function avisar(texto, ms = 5000) {
@@ -177,16 +231,19 @@ function renderMensagens() {
 $("#form-msg").addEventListener("submit", (e) => {
   e.preventDefault();
   const texto = $("#texto").value.trim().slice(0, 500);
-  if (!texto || !acoes) return;
-  const m = { id: `${selfId}-${Date.now()}-${contadorMsg++}`, texto };
-  acoes.msg.send(m);
-  adicionarMsg({ ...m, de: selfId, nome: estado.eu.nome, cor: estado.eu.cor, em: Date.now() });
+  if (!texto || !canal) return;
+  if (!canal.conectado()) return avisar("Sem conexão com o chat no momento. Tentando reconectar…");
+  const mid = `${selfId}-${Date.now()}-${contadorMsg++}`;
+  canal.publicar({ t: "msg", id: selfId, mid, nome: estado.eu.nome, texto });
+  adicionarMsg({ id: mid, de: selfId, nome: estado.eu.nome, cor: estado.eu.cor, texto, em: Date.now() });
   $("#texto").value = "";
 });
 
 function renderPresenca() {
   const n = estado.usuarios.size + 1;
-  $("#online").textContent = `${n} ${n === 1 ? "pessoa" : "pessoas"} na sala`;
+  $("#online").textContent = canal && !canal.conectado()
+    ? "Reconectando ao chat…"
+    : `${n} ${n === 1 ? "pessoa" : "pessoas"} na sala`;
 }
 
 // ======================= câmera e microfone =======================
@@ -221,7 +278,7 @@ function publicarMidia() {
   const a = estado.stream?.getAudioTracks()[0];
   estado.eu.cam = !!v?.enabled;
   estado.eu.mic = !!a?.enabled;
-  acoes.perfil.send(perfilPublico());
+  anunciar("presenca");
   renderControles();
   atualizarTile(estado.eu.id);
 }

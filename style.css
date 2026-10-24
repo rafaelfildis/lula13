@@ -13,14 +13,17 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--fundo); color: var(--texto); font: 15px/1.45 var(--fonte); }
-button { font: inherit; cursor: pointer; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { background: var(--fundo); color: var(--texto); font: 15px/1.45 var(--fonte); overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; cursor: pointer; touch-action: manipulation; }
+:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
 [hidden] { display: none !important; }
 
 /* ---------- botões ---------- */
 .btn { border: 0; border-radius: 999px; padding: 10px 18px; font-weight: 600; }
 .btn-primario { background: var(--destaque); color: #1a1a1a; }
 .btn-primario:hover { filter: brightness(1.08); }
+.btn:active, .btn-icone:active, .chip:active { transform: scale(.97); }
 .btn-fantasma { background: transparent; color: var(--texto-2); border: 1px solid var(--borda); }
 .btn-icone { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--borda); background: var(--painel-2); color: var(--texto); position: relative; }
 .btn-icone[aria-pressed="false"]::after { content: ""; position: absolute; left: 8px; right: 8px; top: 50%; height: 2px; background: var(--vivo); transform: rotate(-35deg); }
@@ -33,20 +36,20 @@ button { font: inherit; cursor: pointer; }
 @keyframes pulso { 50% { opacity: .3; } }
 
 /* ---------- entrada ---------- */
-.entrada { min-height: 100%; display: grid; place-items: center; padding: 16px;
+.entrada { min-height: 100%; min-height: 100dvh; display: grid; place-items: center; padding: 16px;
   background: radial-gradient(ellipse at 30% 20%, #1f2a3d 0%, var(--fundo) 60%); }
 .cartao-entrada { width: min(420px, 100%); background: var(--painel); border: 1px solid var(--borda); border-radius: 18px; padding: 28px; display: grid; gap: 12px; }
 .cartao-entrada h1 { margin: 0; font-size: 30px; }
 .cartao-entrada .sub { margin: 0 0 8px; color: var(--texto-2); }
 .cartao-entrada label { font-size: 13px; color: var(--texto-2); }
 .cartao-entrada input, .form-msg input {
-  background: var(--fundo); border: 1px solid var(--borda); color: var(--texto); border-radius: 10px; padding: 12px 14px; font: inherit; width: 100%; }
+  background: var(--fundo); border: 1px solid var(--borda); color: var(--texto); border-radius: 10px; padding: 12px 14px; font: inherit; font-size: 16px; width: 100%; }
 .cartao-entrada input:focus, .form-msg input:focus { outline: 2px solid #4fc3f7; outline-offset: 0; border-color: transparent; }
 .erro { color: #ff8a80; margin: 0; min-height: 1em; font-size: 13px; }
 .nota { color: var(--texto-2); font-size: 12px; margin: 0; }
 
 /* ---------- painel ---------- */
-.painel { height: 100vh; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); grid-template-rows: auto minmax(0, 1fr); }
+.painel { height: 100vh; height: 100dvh; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); grid-template-rows: auto minmax(0, 1fr); }
 .topo { grid-column: 1 / -1; display: flex; align-items: center; gap: 24px; padding: 10px 20px; border-bottom: 1px solid var(--borda); background: var(--painel); }
 .marca { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .fonte { font-size: 12px; color: var(--texto-2); border: 1px solid var(--borda); border-radius: 999px; padding: 2px 10px; }
@@ -75,8 +78,14 @@ button { font: inherit; cursor: pointer; }
 #mapa { width: 100%; height: 100%; max-height: 100%; }
 #mapa path { stroke: var(--fundo); stroke-width: 1.2; transition: fill .6s ease, fill-opacity .6s ease; cursor: pointer; }
 #mapa path:hover, #mapa path.sel { stroke: var(--texto); stroke-width: 2.5; }
-#mapa text { font-size: 15px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 3px; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
-#mapa text.peq { font-size: 11px; }
+/* --k = unidades do mapa por pixel de tela (app.js), para o texto ter o mesmo tamanho em qualquer tela */
+#mapa { --fs-sigla: 10px; --fs-pct: 12px; }
+#mapa text { font-size: calc(var(--k, 1) * var(--fs-sigla)); font-weight: 700; fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,.6); stroke-width: calc(var(--k, 1) * 3px); stroke-linejoin: round; pointer-events: none; text-anchor: middle; dominant-baseline: middle; }
+#mapa .pct-uf { font-size: calc(var(--k, 1) * var(--fs-pct)); font-weight: 800; }
+#mapa text.fora { text-anchor: start; }
+#mapa .guia { stroke: rgba(232,236,242,.55); stroke-width: calc(var(--k, 1) * 1px); fill: none; pointer-events: none; }
+#mapa .guia-ponto { fill: var(--texto); pointer-events: none; }
+#mapa text.apagado { opacity: .45; }
 #mapa .anel-gov { fill: none; stroke: var(--destaque); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
 .tooltip { position: absolute; pointer-events: none; background: rgba(14,17,23,.96); border: 1px solid var(--borda); border-radius: 10px; padding: 10px 12px; min-width: 210px; font-size: 13px; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 
@@ -127,6 +136,9 @@ button { font: inherit; cursor: pointer; }
 .mensagens .sistema.destaque { color: var(--destaque); font-style: normal; font-weight: 600; font-size: 13px; }
 .form-msg { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--borda); }
 
+.abas-mobile { display: none; }
+.badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--vivo); color: #fff; font-size: 12px; font-weight: 800; display: inline-grid; place-items: center; }
+
 .aviso { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #2b1f1f; border: 1px solid #ff8a80; color: #ffd0cc; padding: 10px 16px; border-radius: 10px; z-index: 20; max-width: calc(100% - 32px); }
 
 /* ---------- telas menores ---------- */
@@ -134,18 +146,64 @@ button { font: inherit; cursor: pointer; }
   .painel { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
   .videos { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
+/* ---------- celular: placar fixo em cima, abas Sala / Mapa embaixo ---------- */
 @media (max-width: 860px) {
-  .painel { height: auto; min-height: 100vh; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
-  .topo { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 16px; }
-  .marca { flex-wrap: wrap; white-space: normal; }
+  /* altura = área visível de verdade (descontando teclado e barras do Safari/Chrome), calculada em app.js */
+  .painel { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh);
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .topo { flex-direction: column; align-items: stretch; gap: 6px; padding: calc(env(safe-area-inset-top) + 8px) 14px 8px; }
+  .marca { gap: 8px; flex-wrap: wrap; white-space: normal; }
+  .marca strong { font-size: 14px; }
+  .fonte { font-size: 11px; padding: 1px 8px; }
   .placar-cand { flex-wrap: wrap; flex: 1; gap: 0 6px; }
+  .placar-cand .pct { font-size: 20px; }
   .placar-cand .nm { flex-basis: 100%; font-size: 13px; }
   .placar-cand.dir .nm { text-align: right; }
-  .col-mapa { padding: 12px 16px; }
-  .mapa-area { grid-template-rows: auto auto; }
+  .placar-cand .vt { font-size: 11px; }
+  .barra { height: 8px; margin: 4px 0 2px; }
+  .placar-rodape { font-size: 11px; }
+  .placar-rodape span:last-child { display: none; }
+
+  .col-mapa, .col-social { grid-row: 2; grid-column: 1; }
+  .painel[data-vista=sala] .col-mapa, .painel[data-vista=mapa] .col-social { display: none; }
+
+  /* aba Mapa */
+  .col-mapa { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px 14px 16px; }
+  .abas .aba { padding: 10px 14px; }
+  .chip { min-height: 36px; }
+  #btn-exterior { margin-left: 0; }
+  .mapa-area { flex: none; grid-template-rows: auto auto; }
+  #mapa { height: auto; aspect-ratio: 1200 / 972; --fs-sigla: 8.5px; --fs-pct: 10.5px; }
   .detalhe { max-height: none; }
-  .col-social { order: 2; }
-  .col-mapa { order: 3; }
-  .col-social { border-left: 0; border-top: 1px solid var(--borda); height: 85vh; }
-  .placar-cand .pct { font-size: 20px; }
+  .legenda { font-size: 11px; gap: 6px 12px; }
+
+  /* aba Sala */
+  .col-social { border-left: 0; }
+  .social-topo { padding: 8px 14px; }
+  .btn-icone { width: 44px; height: 44px; }
+  .convite { margin: 8px 12px; }
+  .convite .btn { min-height: 40px; }
+  .videos { flex: none; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 46%; max-height: none;
+    overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; padding: 8px 12px; -webkit-overflow-scrolling: touch; }
+  .videos:has(.tile:only-child) { grid-auto-columns: 62%; }
+  .tile { scroll-snap-align: start; }
+  .tile .avatar { font-size: 30px; }
+  .mensagens { min-height: 0; padding: 8px 14px; font-size: 15px; }
+  .form-msg { padding: 8px 12px; }
+  .form-msg .btn { min-height: 44px; }
+
+  .abas-mobile { display: flex; border-top: 1px solid var(--borda); background: var(--painel); padding-bottom: env(safe-area-inset-bottom); }
+  .abas-mobile button { flex: 1; min-height: 54px; border: 0; background: none; color: var(--texto-2); font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .abas-mobile button.ativa { color: var(--texto); box-shadow: inset 0 3px 0 var(--destaque); }
+
+  /* teclado aberto: some o placar e as abas para sobrar espaço para a conversa */
+  .painel.teclado .topo, .painel.teclado .abas-mobile, .painel.teclado .convite { display: none; }
+
+  .aviso { bottom: calc(70px + env(safe-area-inset-bottom)); }
+  .cartao-entrada { padding: 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
 }

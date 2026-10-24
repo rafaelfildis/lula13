@@ -13,6 +13,7 @@ const el = (tag, cls, texto) => {
   return e;
 };
 const fmt = (n) => Number(n || 0).toLocaleString("pt-BR");
+const fmtPct1 = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const fmtPct = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const iniciais = (nome) => nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
@@ -38,7 +39,10 @@ const estado = {
   sel: "br", // "br", "zz" ou sigla da UF
   mapa: null,
   stream: null,
+  vista: "sala", // só no celular: "sala" ou "mapa"
+  naoLidas: 0,
 };
+const celular = matchMedia("(max-width: 860px)");
 let sala, acoes;
 
 // ======================= entrada =======================
@@ -158,6 +162,10 @@ function adicionarMsg(m) {
   lista.append(itemMsg(m));
   while (lista.children.length > 200) lista.firstChild.remove();
   if (noFim || m.de === estado.eu?.id) lista.scrollTop = lista.scrollHeight;
+  if (!m.sistema && m.de !== estado.eu?.id && celular.matches && estado.vista !== "sala") {
+    estado.naoLidas++;
+    renderNaoLidas();
+  }
 }
 
 function renderMensagens() {
@@ -261,6 +269,7 @@ function atualizarTile(id) {
     const video = el("video");
     video.autoplay = true;
     video.playsInline = true;
+    video.setAttribute("playsinline", ""); // Safari no iPhone: sem isso o vídeo abre em tela cheia
     video.muted = souEu; // nunca reproduz o próprio áudio
     const avatar = el("div", "avatar", iniciais(u.nome));
     avatar.style.color = u.cor;
@@ -360,9 +369,9 @@ async function carregarMapa() {
   const dados = await (await fetch("brasil-ufs.json")).json();
   estado.mapa = dados;
   const svg = $("#mapa");
-  svg.setAttribute("viewBox", `0 0 ${dados.largura} ${dados.altura}`);
+  // 200 unidades extras à direita: espaço no oceano para os rótulos dos estados pequenos
+  svg.setAttribute("viewBox", `0 0 ${dados.largura + 200} ${dados.altura}`);
   const ns = "http://www.w3.org/2000/svg";
-  const PEQUENOS = new Set(["df", "se", "al", "pb", "rn", "pe", "es", "rj"]);
   const gPaths = document.createElementNS(ns, "g");
   const gAneis = document.createElementNS(ns, "g");
   const gTextos = document.createElementNS(ns, "g");
@@ -370,8 +379,9 @@ async function carregarMapa() {
     const path = document.createElementNS(ns, "path");
     path.setAttribute("d", uf.d);
     path.dataset.uf = uf.uf;
-    path.addEventListener("mousemove", (e) => mostrarTooltip(uf.uf, e));
-    path.addEventListener("mouseleave", () => ($("#tooltip").hidden = true));
+    // no toque não existe "passar o mouse": o toque seleciona o estado e o detalhe aparece abaixo do mapa
+    path.addEventListener("pointermove", (e) => e.pointerType === "mouse" && mostrarTooltip(uf.uf, e));
+    path.addEventListener("pointerleave", () => ($("#tooltip").hidden = true));
     path.addEventListener("click", () => selecionar(uf.uf));
     gPaths.append(path);
     const anel = document.createElementNS(ns, "path");
@@ -379,14 +389,69 @@ async function carregarMapa() {
     anel.setAttribute("class", "anel-gov");
     anel.dataset.uf = uf.uf;
     gAneis.append(anel);
-    const t = document.createElementNS(ns, "text");
-    t.setAttribute("x", uf.cx);
-    t.setAttribute("y", uf.cy);
-    if (PEQUENOS.has(uf.uf)) t.setAttribute("class", "peq");
-    t.textContent = uf.uf.toUpperCase();
-    gTextos.append(t);
+    gTextos.append(...criarRotulo(ns, uf));
   }
   svg.append(gPaths, gAneis, gTextos);
+  // mantém o texto do mapa com o mesmo tamanho em pixels em qualquer tela
+  new ResizeObserver(() => {
+    const vb = svg.viewBox.baseVal;
+    const escala = Math.min(svg.clientWidth / vb.width, svg.clientHeight / vb.height);
+    if (escala > 0) svg.style.setProperty("--k", (1 / escala).toFixed(3));
+  }).observe(svg);
+}
+
+// Estados pequenos do litoral (e o DF, dentro de GO): rótulo no oceano com uma linha-guia
+const ROTULOS_FORA = { rn: [985, 250], pb: [985, 290], pe: [985, 330], al: [985, 370], se: [985, 410], es: [860, 622], rj: [815, 738], df: [690, 524], sc: [660, 822] };
+// rótulos deslocados do centro para não encostarem nos vizinhos
+const ROTULOS_AJUSTE = { go: [560, 562], pi: [748, 350], ma: [668, 250], sp: [628, 676], pr: [512, 742], rs: [478, 885] };
+
+function criarRotulo(ns, uf) {
+  const fora = ROTULOS_FORA[uf.uf];
+  const [x, y] = fora ?? ROTULOS_AJUSTE[uf.uf] ?? [uf.cx, uf.cy];
+  const t = document.createElementNS(ns, "text");
+  t.dataset.uf = uf.uf;
+  t.setAttribute("x", x);
+  t.setAttribute("y", y);
+  const sigla = document.createElementNS(ns, "tspan");
+  sigla.setAttribute("class", "sigla-uf");
+  sigla.textContent = uf.uf.toUpperCase();
+  const pct = document.createElementNS(ns, "tspan");
+  pct.setAttribute("class", "pct-uf");
+  t.append(sigla, pct);
+  if (!fora) return [t];
+
+  t.classList.add("fora");
+  pct.setAttribute("dx", "0.3em");
+  const guia = document.createElementNS(ns, "polyline");
+  guia.setAttribute("class", "guia");
+  guia.setAttribute("points", `${uf.cx},${uf.cy} ${x - 8},${y}`);
+  const ponto = document.createElementNS(ns, "circle");
+  ponto.setAttribute("class", "guia-ponto");
+  ponto.setAttribute("cx", uf.cx);
+  ponto.setAttribute("cy", uf.cy);
+  ponto.setAttribute("r", 3);
+  return [guia, ponto, t];
+}
+
+// Atualiza "SP / 52,3%" em cada estado (sigla em cima, % do líder embaixo)
+function renderRotulos() {
+  const govUfs = new Set(Object.keys(estado.apuracao.governador));
+  for (const t of $("#mapa").querySelectorAll("text[data-uf]")) {
+    const uf = t.dataset.uf;
+    const r = resultadoDe(uf);
+    const lider = r?.cands?.[0];
+    const valor = iniciada(r) && lider?.votos ? fmtPct1(lider.pct) + "%" : "";
+    const [sigla, pct] = t.children;
+    pct.textContent = valor;
+    if (!t.classList.contains("fora")) {
+      // duas linhas centralizadas no estado; sem % fica só a sigla no centro
+      for (const s of [sigla, pct]) s.setAttribute("x", t.getAttribute("x"));
+      sigla.setAttribute("dy", valor ? "-0.5em" : "0");
+      pct.setAttribute("dy", valor ? "1.15em" : "0");
+    }
+    pct.style.fill = t.classList.contains("fora") && valor ? corDe(r, lider.numero) : "";
+    t.classList.toggle("apagado", estado.cargo === "governador" && !govUfs.has(uf));
+  }
 }
 const nomeUf = (uf) => (uf === "br" ? "Brasil" : uf === "zz" ? "Exterior" : estado.mapa?.ufs.find((u) => u.uf === uf)?.nome ?? uf.toUpperCase());
 
@@ -475,6 +540,7 @@ function renderMapa() {
   // contorno tracejado nos estados com 2º turno para governador (aba Presidente)
   for (const anel of $("#mapa").querySelectorAll(".anel-gov"))
     anel.style.display = estado.cargo === "presidente" && govUfs.has(anel.dataset.uf) && estado.apuracao.turno === 2 ? "" : "none";
+  renderRotulos();
 }
 
 function blocoResultado(r, titulo) {
@@ -565,7 +631,53 @@ function selecionar(uf) {
   estado.sel = estado.sel === uf ? "br" : uf;
   renderMapa();
   renderDetalhe();
+  if (celular.matches) $("#detalhe").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+
+// ======================= celular =======================
+function mudarVista(vista) {
+  estado.vista = vista;
+  $("#painel").dataset.vista = vista;
+  for (const b of document.querySelectorAll(".abas-mobile button")) {
+    const ativa = b.dataset.vista === vista;
+    b.classList.toggle("ativa", ativa);
+    if (ativa) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  }
+  if (vista === "sala") {
+    estado.naoLidas = 0;
+    renderNaoLidas();
+    const lista = $("#mensagens");
+    lista.scrollTop = lista.scrollHeight;
+  }
+}
+function renderNaoLidas() {
+  const b = $("#nao-lidas");
+  b.hidden = !estado.naoLidas;
+  b.textContent = estado.naoLidas > 99 ? "99+" : String(estado.naoLidas);
+  b.setAttribute("aria-label", `${estado.naoLidas} mensagens novas`);
+}
+for (const b of document.querySelectorAll(".abas-mobile button")) b.addEventListener("click", () => mudarVista(b.dataset.vista));
+
+// Safari (iPhone) não encolhe a página quando o teclado abre: usa a área visível de verdade
+// para o campo de mensagem ficar sempre logo acima do teclado.
+function ajustarAreaVisivel() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const raiz = document.documentElement.style;
+  raiz.setProperty("--vv-h", `${vv.height}px`);
+  raiz.setProperty("--vv-top", `${vv.offsetTop}px`);
+  const tecladoAberto = celular.matches && vv.height < window.innerHeight * 0.78 && document.activeElement?.tagName === "INPUT";
+  $("#painel").classList.toggle("teclado", tecladoAberto);
+  if (tecladoAberto) $("#mensagens").scrollTop = $("#mensagens").scrollHeight;
+}
+window.visualViewport?.addEventListener("resize", ajustarAreaVisivel);
+window.visualViewport?.addEventListener("scroll", ajustarAreaVisivel);
+$("#texto").addEventListener("focus", () => setTimeout(ajustarAreaVisivel, 300));
+$("#texto").addEventListener("blur", () => setTimeout(ajustarAreaVisivel, 300));
+ajustarAreaVisivel();
+
+// Navegadores só liberam áudio depois de um toque; destrava o medidor de fala
+document.addEventListener("pointerdown", () => audioCtx?.state === "suspended" && audioCtx.resume(), { passive: true });
 
 for (const aba of document.querySelectorAll(".aba")) {
   aba.addEventListener("click", () => {

@@ -2,7 +2,10 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0e1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Apuração ao Vivo</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -22,7 +25,7 @@
   </section>
 
   <!-- Painel -->
-  <main id="painel" class="painel" hidden>
+  <main id="painel" class="painel" data-vista="sala" hidden>
     <header class="topo">
       <div class="marca">
         <span class="selo"><span class="ponto-vivo"></span> AO VIVO</span>
@@ -72,10 +75,20 @@
       <div id="videos" class="videos"></div>
       <ol id="mensagens" class="mensagens" aria-live="polite"></ol>
       <form id="form-msg" class="form-msg" autocomplete="off">
-        <input id="texto" maxlength="500" placeholder="Comente a apuração…" aria-label="Mensagem">
+        <input id="texto" maxlength="500" placeholder="Comente a apuração…" aria-label="Mensagem" enterkeyhint="send" autocapitalize="sentences">
         <button class="btn btn-primario" type="submit">Enviar</button>
       </form>
     </aside>
+
+    <!-- Só no celular: alterna entre a sala e o mapa -->
+    <nav class="abas-mobile" aria-label="Seções do painel">
+      <button type="button" data-vista="sala" class="ativa" aria-current="page">
+        <span aria-hidden="true">💬</span> Sala ao vivo <span id="nao-lidas" class="badge" hidden></span>
+      </button>
+      <button type="button" data-vista="mapa">
+        <span aria-hidden="true">🗺️</span> Mapa
+      </button>
+    </nav>
   </main>
 
   <div id="aviso" class="aviso" role="status" hidden></div>

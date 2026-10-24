@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apuração ao Vivo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Entrada: só o nome, sem cadastro -->
+  <section id="entrada" class="entrada">
+    <form id="form-entrada" class="cartao-entrada" autocomplete="off">
+      <span class="selo"><span class="ponto-vivo"></span> AO VIVO</span>
+      <h1>Apuração 2026</h1>
+      <p class="sub">Acompanhe o 2º turno no mapa e comente com quem está assistindo junto.</p>
+      <label for="nome">Como quer ser chamado?</label>
+      <input id="nome" name="nome" maxlength="30" placeholder="Seu nome ou apelido" required minlength="2" autofocus>
+      <button type="submit" class="btn btn-primario">Entrar na sala</button>
+      <p id="erro-entrada" class="erro" role="alert"></p>
+      <p class="nota">Sem cadastro e sem senha. Câmera e microfone são opcionais e você escolhe ativar depois de entrar.</p>
+    </form>
+  </section>
+
+  <!-- Painel -->
+  <main id="painel" class="painel" hidden>
+    <header class="topo">
+      <div class="marca">
+        <span class="selo"><span class="ponto-vivo"></span> AO VIVO</span>
+        <strong>Apuração 2026</strong>
+        <span id="fonte" class="fonte"></span>
+      </div>
+      <div id="placar" class="placar" aria-live="polite"></div>
+    </header>
+
+    <section class="col-mapa">
+      <div class="abas" role="tablist">
+        <button class="aba ativa" data-cargo="presidente" role="tab">Presidente</button>
+        <button class="aba" data-cargo="governador" role="tab">Governador</button>
+        <button id="btn-exterior" class="chip">🌎 Exterior</button>
+        <button id="btn-brasil" class="chip">🇧🇷 Brasil</button>
+      </div>
+      <div class="mapa-area">
+        <div id="mapa-wrap" class="mapa-wrap">
+          <svg id="mapa" role="img" aria-label="Mapa do Brasil com o resultado por estado"></svg>
+          <div id="tooltip" class="tooltip" hidden></div>
+        </div>
+        <aside id="detalhe" class="detalhe"></aside>
+      </div>
+      <div id="legenda" class="legenda"></div>
+    </section>
+
+    <aside class="col-social">
+      <div class="social-topo">
+        <div>
+          <strong>Sala ao vivo</strong>
+          <span id="online" class="online"></span>
+        </div>
+        <div class="controles">
+          <button id="btn-cam" class="btn-icone" title="Câmera" aria-pressed="false">📷</button>
+          <button id="btn-mic" class="btn-icone" title="Microfone" aria-pressed="false">🎙️</button>
+        </div>
+      </div>
+
+      <div id="convite-midia" class="convite" hidden>
+        <p><strong>Quer aparecer pra galera?</strong> Ative câmera e microfone para conversar enquanto acompanha a votação.</p>
+        <div class="convite-acoes">
+          <button id="btn-ativar-midia" class="btn btn-primario">Ativar câmera e microfone</button>
+          <button id="btn-so-chat" class="btn btn-fantasma">Só chat por enquanto</button>
+        </div>
+      </div>
+
+      <div id="videos" class="videos"></div>
+      <ol id="mensagens" class="mensagens" aria-live="polite"></ol>
+      <form id="form-msg" class="form-msg" autocomplete="off">
+        <input id="texto" maxlength="500" placeholder="Comente a apuração…" aria-label="Mensagem">
+        <button class="btn btn-primario" type="submit">Enviar</button>
+      </form>
+    </aside>
+  </main>
+
+  <div id="aviso" class="aviso" role="status" hidden></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

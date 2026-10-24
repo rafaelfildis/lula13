@@ -1,5 +1,9 @@
 // Painel da apuração: mapa (esquerda) + sala ao vivo com chat, câmera e microfone (direita).
-// Vídeo/áudio vão direto entre os navegadores (WebRTC em malha); o servidor só repassa a sinalização.
+// Roda 100% no navegador (GitHub Pages): os resultados vêm direto do TSE e a sala é P2P via Trystero
+// (os navegadores se encontram por relays públicos Nostr e depois conversam direto por WebRTC).
+
+import { joinRoom, selfId } from "https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm";
+import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js";
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, texto) => {
@@ -12,97 +16,113 @@ const fmt = (n) => Number(n || 0).toLocaleString("pt-BR");
 const fmtPct = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const iniciais = (nome) => nome.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
+const params = new URLSearchParams(location.search);
+const TURNO = Number(params.get("turno")) || 2;
+const SALA = (params.get("sala") || "principal").slice(0, 40);
+const APP_ID = "lula13-apuracao-2026";
+const INTERVALO_TSE = 30000;
+const MAX_CAMERAS = 8; // malha P2P: acima disso cada navegador envia vídeo demais
+const AGUARDANDO = "Aguardando o início da apuração · divulgação a partir das 17h (Brasília)";
+
 const PALETA = ["#ef6a4c", "#3d8bfd", "#f5b83d", "#33c3a0", "#b07cf0", "#9aa5b1"];
-const ICE = [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }];
+const CORES = ["#ff8a65", "#4fc3f7", "#aed581", "#ffd54f", "#ba68c8", "#4db6ac", "#f06292", "#9575cd", "#e57373", "#81c784"];
+const corDoId = (id) => CORES[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % CORES.length];
 
 const estado = {
   eu: null,
-  usuarios: new Map(),
+  usuarios: new Map(), // peerId -> { id, nome, cor, cam, mic }
+  streams: new Map(), // peerId -> MediaStream recebido
+  mensagens: [],
   apuracao: null,
   cargo: "presidente",
   sel: "br", // "br", "zz" ou sigla da UF
   mapa: null,
   stream: null,
 };
-let ws;
+let sala, acoes;
 
 // ======================= entrada =======================
 try { $("#nome").value = localStorage.getItem("apuracao-nome") || ""; } catch {}
 
 $("#form-entrada").addEventListener("submit", (e) => {
   e.preventDefault();
-  const nome = $("#nome").value.trim();
+  const nome = $("#nome").value.replace(/\s+/g, " ").trim().slice(0, 30);
   if (nome.length < 2) return ($("#erro-entrada").textContent = "Digite um nome com pelo menos 2 letras.");
   try { localStorage.setItem("apuracao-nome", nome); } catch {}
   $("#erro-entrada").textContent = "";
-  conectar(nome);
+  entrar(nome);
 });
 
-function conectar(nome) {
-  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-  ws.onopen = () => enviar({ tipo: "entrar", nome });
-  ws.onmessage = (e) => tratar(JSON.parse(e.data));
-  ws.onerror = () => { if (!estado.eu) $("#erro-entrada").textContent = "Não foi possível conectar ao servidor."; };
-  ws.onclose = () => {
-    if (!estado.eu) return;
-    avisar("Conexão perdida. Recarregue a página para voltar à sala.", 0);
-    for (const id of peers.keys()) fecharPeer(id);
+function entrar(nome) {
+  estado.eu = { id: selfId, nome, cor: corDoId(selfId), cam: false, mic: false };
+  $("#entrada").hidden = true;
+  $("#painel").hidden = false;
+  $("#convite-midia").hidden = false;
+  renderPresenca();
+  carregarMapa().then(() => estado.apuracao && receberApuracao(estado.apuracao));
+  adicionarMsg({ id: "local-entrou", sistema: true, texto: "Você entrou na sala. Procurando quem está assistindo…", em: Date.now() });
+
+  sala = joinRoom({ appId: APP_ID }, "sala-" + SALA);
+  acoes = {
+    perfil: sala.makeAction("perfil"),
+    msg: sala.makeAction("msg"),
+    historico: sala.makeAction("historico"),
+  };
+
+  sala.onPeerJoin = (id) => {
+    acoes.perfil.send(perfilPublico(), { target: id });
+    acoes.historico.send(estado.mensagens.filter((m) => !m.sistema).slice(-50), { target: id });
+    if (estado.stream) sala.addStream(estado.stream, { target: id });
+  };
+  sala.onPeerLeave = (id) => {
+    const u = estado.usuarios.get(id);
+    estado.usuarios.delete(id);
+    estado.streams.delete(id);
+    pararMedidor(id);
+    document.getElementById("tile-" + id)?.remove();
+    if (u) adicionarMsg({ id: "saiu-" + id + Date.now(), sistema: true, texto: `${u.nome} saiu`, em: Date.now() });
+    renderPresenca();
+  };
+  sala.onPeerStream = (stream, id) => {
+    estado.streams.set(id, stream);
+    atualizarTile(id);
+  };
+
+  acoes.perfil.onMessage = (p, { peerId }) => {
+    const nome = String(p?.nome ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
+    if (nome.length < 2) return;
+    const novo = !estado.usuarios.has(peerId);
+    estado.usuarios.set(peerId, { id: peerId, nome, cor: corDoId(peerId), cam: !!p.cam, mic: !!p.mic });
+    if (novo) adicionarMsg({ id: "entrou-" + peerId, sistema: true, texto: `${nome} entrou na sala`, em: Date.now() });
+    renderPresenca();
+    atualizarTile(peerId);
+  };
+  acoes.msg.onMessage = (m, { peerId }) => {
+    const u = estado.usuarios.get(peerId);
+    const texto = String(m?.texto ?? "").trim().slice(0, 500);
+    if (!texto) return;
+    adicionarMsg({ id: String(m.id), de: peerId, nome: u?.nome ?? "Alguém", cor: corDoId(peerId), texto, em: Date.now() });
+  };
+  // Quem já estava na sala manda as últimas mensagens para quem acabou de chegar
+  acoes.historico.onMessage = (lista) => {
+    if (!Array.isArray(lista)) return;
+    let mudou = false;
+    for (const m of lista.slice(-50)) {
+      if (!m?.id || estado.mensagens.some((x) => x.id === m.id)) continue;
+      const texto = String(m.texto ?? "").trim().slice(0, 500);
+      const nome = String(m.nome ?? "").trim().slice(0, 30);
+      if (!texto || !nome) continue;
+      estado.mensagens.push({ id: String(m.id), de: String(m.de), nome, cor: corDoId(String(m.de)), texto, em: Number(m.em) || Date.now() });
+      mudou = true;
+    }
+    if (mudou) {
+      estado.mensagens.sort((a, b) => a.em - b.em);
+      renderMensagens();
+    }
   };
 }
-const enviar = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 
-function tratar(m) {
-  switch (m.tipo) {
-    case "bemvindo":
-      estado.eu = m.eu;
-      m.usuarios.forEach((u) => estado.usuarios.set(u.id, u));
-      $("#entrada").hidden = true;
-      $("#painel").hidden = false;
-      $("#convite-midia").hidden = false;
-      m.historico.forEach(adicionarMsg);
-      renderPresenca();
-      carregarMapa().then(() => m.apuracao && receberApuracao(m.apuracao));
-      // Conexão com quem já está na sala (o vídeo só flui quando alguém liga a câmera/microfone)
-      m.usuarios.forEach((u) => { criarPeer(u.id); atualizarTile(u.id); });
-      break;
-    case "erro":
-      if (!estado.eu) { $("#erro-entrada").textContent = m.texto; ws.close(); }
-      else avisar(m.texto);
-      break;
-    case "entrou":
-      estado.usuarios.set(m.usuario.id, m.usuario);
-      criarPeer(m.usuario.id);
-      renderPresenca();
-      break;
-    case "saiu":
-      estado.usuarios.delete(m.id);
-      fecharPeer(m.id);
-      document.getElementById("tile-" + m.id)?.remove();
-      renderPresenca();
-      break;
-    case "msg":
-      adicionarMsg(m);
-      break;
-    case "midia": {
-      if (m.id === estado.eu.id) {
-        // o servidor pode recusar a câmera (limite da sala)
-        if (!m.cam && estado.stream) estado.stream.getVideoTracks().forEach((t) => (t.enabled = false));
-        estado.eu.cam = m.cam; estado.eu.mic = m.mic;
-        renderControles(); atualizarTile(m.id);
-        break;
-      }
-      const u = estado.usuarios.get(m.id);
-      if (u) { u.cam = m.cam; u.mic = m.mic; atualizarTile(m.id); }
-      break;
-    }
-    case "sinal":
-      receberSinal(m.de, m.dados);
-      break;
-    case "apuracao":
-      receberApuracao(m.dados);
-      break;
-  }
-}
+const perfilPublico = () => ({ nome: estado.eu.nome, cam: estado.eu.cam, mic: estado.eu.mic });
 
 let avisoTimer;
 function avisar(texto, ms = 5000) {
@@ -114,12 +134,12 @@ function avisar(texto, ms = 5000) {
 }
 
 // ======================= chat =======================
-function adicionarMsg(m) {
-  const lista = $("#mensagens");
-  const noFim = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 60;
+let contadorMsg = 0;
+
+function itemMsg(m) {
   const li = el("li");
   if (m.sistema) {
-    li.className = "sistema" + (m.texto.startsWith("🗳️") ? " destaque" : "");
+    li.className = "sistema" + (m.destaque ? " destaque" : "");
     li.textContent = m.texto;
   } else {
     const quem = el("span", "quem", m.nome);
@@ -127,16 +147,32 @@ function adicionarMsg(m) {
     li.append(quem, document.createTextNode(m.texto));
     li.append(el("span", "hora", new Date(m.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })));
   }
-  lista.append(li);
+  return li;
+}
+
+function adicionarMsg(m) {
+  estado.mensagens.push(m);
+  if (estado.mensagens.length > 200) estado.mensagens.shift();
+  const lista = $("#mensagens");
+  const noFim = lista.scrollHeight - lista.scrollTop - lista.clientHeight < 60;
+  lista.append(itemMsg(m));
   while (lista.children.length > 200) lista.firstChild.remove();
   if (noFim || m.de === estado.eu?.id) lista.scrollTop = lista.scrollHeight;
 }
 
+function renderMensagens() {
+  const lista = $("#mensagens");
+  lista.replaceChildren(...estado.mensagens.map(itemMsg));
+  lista.scrollTop = lista.scrollHeight;
+}
+
 $("#form-msg").addEventListener("submit", (e) => {
   e.preventDefault();
-  const texto = $("#texto").value.trim();
-  if (!texto) return;
-  enviar({ tipo: "msg", texto });
+  const texto = $("#texto").value.trim().slice(0, 500);
+  if (!texto || !acoes) return;
+  const m = { id: `${selfId}-${Date.now()}-${contadorMsg++}`, texto };
+  acoes.msg.send(m);
+  adicionarMsg({ ...m, de: selfId, nome: estado.eu.nome, cor: estado.eu.cor, em: Date.now() });
   $("#texto").value = "";
 });
 
@@ -150,7 +186,7 @@ async function ativarMidia() {
   if (estado.stream) return true;
   try {
     estado.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: { echoCancellation: true, noiseSuppression: true } });
-  } catch (err) {
+  } catch {
     try {
       // sem câmera (ou câmera negada): tenta só o microfone
       estado.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -162,7 +198,12 @@ async function ativarMidia() {
       return false;
     }
   }
-  for (const p of peers.values()) estado.stream.getTracks().forEach((t) => p.pc.addTrack(t, estado.stream));
+  const camerasAbertas = [...estado.usuarios.values()].filter((u) => u.cam).length;
+  if (camerasAbertas >= MAX_CAMERAS) {
+    estado.stream.getVideoTracks().forEach((t) => (t.enabled = false));
+    avisar(`A sala já tem ${MAX_CAMERAS} câmeras abertas. Você pode participar pelo microfone.`);
+  }
+  sala.addStream(estado.stream);
   $("#convite-midia").hidden = true;
   return true;
 }
@@ -172,7 +213,7 @@ function publicarMidia() {
   const a = estado.stream?.getAudioTracks()[0];
   estado.eu.cam = !!v?.enabled;
   estado.eu.mic = !!a?.enabled;
-  enviar({ tipo: "midia", cam: estado.eu.cam, mic: estado.eu.mic });
+  acoes.perfil.send(perfilPublico());
   renderControles();
   atualizarTile(estado.eu.id);
 }
@@ -188,6 +229,8 @@ $("#btn-cam").onclick = async () => {
   if (!estado.stream) { if (await ativarMidia()) publicarMidia(); return; }
   const v = estado.stream.getVideoTracks()[0];
   if (!v) return avisar("Nenhuma câmera disponível.");
+  if (!v.enabled && [...estado.usuarios.values()].filter((u) => u.cam).length >= MAX_CAMERAS)
+    return avisar(`A sala já tem ${MAX_CAMERAS} câmeras abertas.`);
   v.enabled = !v.enabled;
   publicarMidia();
 };
@@ -202,73 +245,12 @@ $("#btn-mic").onclick = async () => {
   publicarMidia();
 };
 
-// ---------- WebRTC em malha com "perfect negotiation" ----------
-const peers = new Map(); // id -> { pc, educado, fazendoOferta, ignorarOferta, stream }
-
-function criarPeer(id) {
-  if (peers.has(id)) return peers.get(id);
-  const pc = new RTCPeerConnection({ iceServers: ICE });
-  const p = { pc, educado: estado.eu.id < id, fazendoOferta: false, ignorarOferta: false, stream: null };
-  peers.set(id, p);
-
-  pc.onnegotiationneeded = async () => {
-    try {
-      p.fazendoOferta = true;
-      await pc.setLocalDescription();
-      enviar({ tipo: "sinal", para: id, dados: { descricao: pc.localDescription } });
-    } catch (err) {
-      console.warn("negociação", err);
-    } finally {
-      p.fazendoOferta = false;
-    }
-  };
-  pc.onicecandidate = ({ candidate }) => candidate && enviar({ tipo: "sinal", para: id, dados: { candidato: candidate } });
-  pc.ontrack = ({ streams }) => {
-    p.stream = streams[0];
-    atualizarTile(id);
-  };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "failed") pc.restartIce();
-  };
-  if (estado.stream) estado.stream.getTracks().forEach((t) => pc.addTrack(t, estado.stream));
-  return p;
-}
-
-async function receberSinal(de, { descricao, candidato }) {
-  const p = criarPeer(de);
-  const { pc } = p;
-  try {
-    if (descricao) {
-      const colisao = descricao.type === "offer" && (p.fazendoOferta || pc.signalingState !== "stable");
-      p.ignorarOferta = !p.educado && colisao;
-      if (p.ignorarOferta) return;
-      await pc.setRemoteDescription(descricao);
-      if (descricao.type === "offer") {
-        await pc.setLocalDescription();
-        enviar({ tipo: "sinal", para: de, dados: { descricao: pc.localDescription } });
-      }
-    } else if (candidato) {
-      try { await pc.addIceCandidate(candidato); } catch (err) { if (!p.ignorarOferta) throw err; }
-    }
-  } catch (err) {
-    console.warn("sinalização", err);
-  }
-}
-
-function fecharPeer(id) {
-  const p = peers.get(id);
-  if (!p) return;
-  p.pc.close();
-  peers.delete(id);
-  pararMedidor(id);
-}
-
 // ---------- quadros de vídeo ----------
 function atualizarTile(id) {
   const souEu = id === estado.eu.id;
   const u = souEu ? estado.eu : estado.usuarios.get(id);
   if (!u) return;
-  const stream = souEu ? estado.stream : peers.get(id)?.stream;
+  const stream = souEu ? estado.stream : estado.streams.get(id);
   const visivel = (u.cam || u.mic) && (souEu ? !!stream : true);
   let tile = document.getElementById("tile-" + id);
   if (!visivel) { tile?.remove(); pararMedidor(id); return; }
@@ -326,6 +308,52 @@ function pararMedidor(id) {
   medidores.delete(id);
 }
 
+// ======================= dados do TSE =======================
+const eleitosAnunciados = new Set();
+let primeiraLeitura = true;
+
+async function iniciarApuracao() {
+  let eleicoes;
+  try {
+    eleicoes = await descobrirEleicoes(TURNO);
+  } catch (err) {
+    console.warn(err);
+    $("#fonte").textContent = "TSE indisponível · tentando de novo";
+    return setTimeout(iniciarApuracao, INTERVALO_TSE);
+  }
+  const ciclo = async () => {
+    try {
+      const snap = await buscarSnapshot(eleicoes);
+      snap.fonte = `TSE · ${TURNO}º turno`;
+      anunciarEleitos(snap);
+      receberApuracao(snap);
+    } catch (err) {
+      console.warn("Falha ao atualizar apuração:", err);
+    }
+  };
+  await ciclo();
+  setInterval(ciclo, INTERVALO_TSE);
+}
+
+// Avisa no chat quando o TSE marca alguém como eleito
+function anunciarEleitos(snap) {
+  const disputas = [["presidente", "br", snap.presidente.br], ...Object.entries(snap.governador).map(([uf, r]) => ["governador", uf, r])];
+  for (const [cargo, uf, r] of disputas) {
+    const eleito = r?.cands?.find((c) => c.eleito);
+    if (!eleito) continue;
+    const chave = `${cargo}:${uf}:${eleito.numero}`;
+    if (eleitosAnunciados.has(chave)) continue;
+    eleitosAnunciados.add(chave);
+    if (primeiraLeitura || !estado.eu) continue; // não anuncia o que já estava decidido ao abrir a página
+    const onde = cargo === "presidente" ? "presidente do Brasil" : `governador(a) — ${uf.toUpperCase()}`;
+    adicionarMsg({ id: "eleito-" + chave, sistema: true, destaque: true, em: Date.now(),
+      texto: `🗳️ TSE: ${eleito.nome} (${eleito.partido}) está eleito(a) ${onde} com ${fmtPct(eleito.pct)}% dos votos válidos.` });
+  }
+  primeiraLeitura = false;
+}
+
+iniciarApuracao();
+
 // ======================= apuração e mapa =======================
 async function carregarMapa() {
   if (estado.mapa) return;
@@ -368,11 +396,14 @@ function corDe(res, numero) {
   return PALETA[Math.max(0, nums.indexOf(Number(numero))) % PALETA.length];
 }
 
+// Antes da primeira urna apurada, o painel fica em branco (sem percentuais nem votos)
+const iniciada = (r) => !!r && !r.erro && (r.secoesPct > 0 || r.cands.some((c) => c.votos > 0));
+
 function receberApuracao(dados) {
   estado.apuracao = dados;
-  const fonte = $("#fonte");
-  fonte.textContent = dados.simulado ? "SIMULAÇÃO · números fictícios" : dados.fonte;
-  fonte.classList.toggle("simulado", !!dados.simulado);
+  const br = dados.presidente.br;
+  $("#fonte").textContent = iniciada(br) ? dados.fonte : `${dados.fonte} · aguardando início`;
+  if (!estado.mapa) return;
   renderPlacar();
   renderMapa();
   renderDetalhe();
@@ -391,16 +422,17 @@ function renderPlacar() {
   const placar = $("#placar");
   placar.replaceChildren();
   if (!r?.cands?.length) return;
+  const comecou = iniciada(r);
   const [a, b] = [...r.cands].slice(0, 2).sort((x, y) => Number(x.numero) - Number(y.numero));
   const linha = el("div", "placar-linha");
   for (const [c, lado] of [[a, ""], [b, "dir"]]) {
     if (!c) continue;
     const bloco = el("div", "placar-cand " + lado);
-    const pct = el("span", "pct", fmtPct(c.pct) + "%");
+    const pct = el("span", "pct", comecou ? fmtPct(c.pct) + "%" : "—");
     pct.style.color = corDe(r, c.numero);
     bloco.append(pct, el("span", "nm", `${c.nome} (${c.partido})`));
     if (c.eleito) bloco.append(el("span", "eleito-tag", "ELEITO"));
-    bloco.append(el("span", "vt", fmt(c.votos) + " votos"));
+    if (comecou) bloco.append(el("span", "vt", fmt(c.votos) + " votos"));
     linha.append(bloco);
   }
   const barra = el("div", "barra");
@@ -415,8 +447,8 @@ function renderPlacar() {
   barra.append(el("span", "meio"));
   const rodape = el("div", "placar-rodape");
   rodape.append(
-    el("span", null, r.totalizado ? "Totalizado" : `${fmtPct(r.secoesPct)}% das seções apuradas`),
-    el("span", null, `Presidente · atualizado ${r.atualizado?.split(" ")[1] ?? ""}`)
+    el("span", null, !comecou ? AGUARDANDO : r.totalizado ? "Totalizado" : `${fmtPct(r.secoesPct)}% das seções apuradas`),
+    el("span", null, comecou ? `Presidente · atualizado ${r.atualizado?.split(" ")[1] ?? ""}` : "Presidente")
   );
   placar.append(linha, barra, rodape);
 }
@@ -428,7 +460,7 @@ function renderMapa() {
     const uf = path.dataset.uf;
     const r = resultadoDe(uf);
     const [l1, l2] = r?.cands ?? [];
-    if (!r || r.erro || !l1 || !r.secoesPct || !l1.votos) {
+    if (!iniciada(r) || !l1?.votos) {
       path.style.fill = "var(--neutro)";
       path.style.fillOpacity = estado.cargo === "governador" && !govUfs.has(uf) ? 0.35 : 1;
     } else {
@@ -450,23 +482,32 @@ function blocoResultado(r, titulo) {
   if (titulo) frag.append(el("h4", null, titulo));
   if (!r) { frag.append(el("p", "meta", "Sem disputa neste turno.")); return frag; }
   if (r.erro) { frag.append(el("p", "meta", "Dados indisponíveis no momento.")); return frag; }
-  const prog = el("div", "progresso");
-  const ps = el("span");
-  ps.style.width = r.secoesPct + "%";
-  prog.append(ps);
-  frag.append(el("div", "meta", r.totalizado ? "Totalizado" : `${fmtPct(r.secoesPct)}% das seções · ${r.atualizado?.split(" ")[1] ?? ""}`), prog);
-  for (const c of r.cands.slice(0, 6)) {
+  const comecou = iniciada(r);
+  if (comecou) {
+    const prog = el("div", "progresso");
+    const ps = el("span");
+    ps.style.width = r.secoesPct + "%";
+    prog.append(ps);
+    frag.append(el("div", "meta", r.totalizado ? "Totalizado" : `${fmtPct(r.secoesPct)}% das seções · ${r.atualizado?.split(" ")[1] ?? ""}`), prog);
+  } else {
+    frag.append(el("div", "meta", "Aguardando o início da apuração"));
+  }
+  const cands = comecou ? r.cands : [...r.cands].sort((a, b) => Number(a.numero) - Number(b.numero));
+  for (const c of cands.slice(0, 6)) {
     const linha = el("div", "res-cand");
     const cor = el("span", "cor");
     cor.style.background = corDe(r, c.numero);
     const nm = el("span", "nm", `${c.nome} · ${c.partido}`);
     if (c.eleito) nm.append(" ", el("span", "eleito-tag", "ELEITO"));
-    const mini = el("div", "mini");
-    const ms = el("span");
-    ms.style.width = c.pct + "%";
-    ms.style.background = corDe(r, c.numero);
-    mini.append(ms);
-    linha.append(cor, nm, el("span", "pc", fmtPct(c.pct) + "%"), mini, el("span", "vt", fmt(c.votos) + " votos"));
+    linha.append(cor, nm, el("span", "pc", comecou ? fmtPct(c.pct) + "%" : "—"));
+    if (comecou) {
+      const mini = el("div", "mini");
+      const ms = el("span");
+      ms.style.width = c.pct + "%";
+      ms.style.background = corDe(r, c.numero);
+      mini.append(ms);
+      linha.append(mini, el("span", "vt", fmt(c.votos) + " votos"));
+    }
     frag.append(linha);
   }
   return frag;
@@ -477,7 +518,7 @@ function renderDetalhe() {
   const uf = estado.sel;
   d.replaceChildren(el("h3", null, nomeUf(uf)));
   const pres = resultadoDe(uf, "presidente");
-  if (pres?.comparecimentoPct) d.append(el("div", "meta", `Comparecimento ${fmtPct(pres.comparecimentoPct)}%`));
+  if (iniciada(pres) && pres.comparecimentoPct) d.append(el("div", "meta", `Comparecimento ${fmtPct(pres.comparecimentoPct)}%`));
   d.append(blocoResultado(pres, "Presidente"));
   if (uf !== "br" && uf !== "zz") {
     const gov = resultadoDe(uf, "governador");

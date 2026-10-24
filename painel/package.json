@@ -6,13 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "simular": "node server.mjs --simular",
-    "turno1": "node server.mjs --turno 1"
+    "publicar": "cd .. && git subtree split --prefix painel/public -b gh-pages && git push -f origin gh-pages"
   },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "ws": "8.18.0"
   }
 }

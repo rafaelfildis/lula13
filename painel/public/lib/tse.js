@@ -1,5 +1,5 @@
 // Leitura dos JSON públicos da divulgação de resultados do TSE (resultados.tse.jus.br).
-// O TSE não envia cabeçalhos CORS, então quem busca é o servidor e repassa aos navegadores.
+// O TSE responde com CORS liberado, então o próprio navegador busca os arquivos.
 
 export const BASE = "https://resultados.tse.jus.br/oficial";
 export const CICLO = "ele2026";

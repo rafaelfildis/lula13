@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <meta name="theme-color" content="#0e1117">
+  <meta name="theme-color" content="#b3091f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Apuração ao Vivo</title>
+  <title>Apuração ao Vivo · PT 13</title>
   <link rel="stylesheet" href="style.css?v=202610241638">
   <script>
     // O GitHub Pages deixa o navegador reaproveitar esta página por até 10 min. Se ela estiver
@@ -27,9 +27,21 @@
   </script>
 </head>
 <body>
+  <!-- Estrela do PT, reaproveitada ao lado dos nomes (<svg><use href="#estrela-pt"/></svg>) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="estrela-pt" viewBox="0 0 100 100">
+      <polygon points="50,7 62.9,35.2 93.7,38.8 70.9,59.8 77,90.2 50,75 23,90.2 29.1,59.8 6.3,38.8 37.1,35.2"
+        fill="var(--estrela-fundo, #e4142c)" stroke="var(--estrela-fundo, #e4142c)" stroke-width="9" stroke-linejoin="round"/>
+      <text x="50" y="64" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-weight="900"
+        font-size="29" letter-spacing="-1" fill="var(--estrela-letra, #fff)">PT</text>
+    </symbol>
+  </svg>
+
   <!-- Entrada: só o nome, sem cadastro -->
   <section id="entrada" class="entrada">
+    <div id="chuva" class="chuva" aria-hidden="true"></div>
     <form id="form-entrada" class="cartao-entrada" autocomplete="off">
+      <svg class="logo-pt" aria-hidden="true"><use href="#estrela-pt"/></svg>
       <span class="selo"><span class="ponto-vivo"></span> AO VIVO</span>
       <h1>Apuração 2026</h1>
       <p class="sub">Acompanhe o 2º turno no mapa e comente com quem está assistindo junto.</p>
@@ -38,6 +50,7 @@
       <button type="submit" class="btn btn-primario">Entrar na sala</button>
       <p id="erro-entrada" class="erro" role="alert"></p>
       <p class="nota">Sem cadastro e sem senha. Câmera e microfone são opcionais e você escolhe ativar depois de entrar.</p>
+      <p class="nota aviso-oficial">Página de apoiadores, sem vínculo oficial com o PT ou o TSE. Resultados: dados públicos do TSE.</p>
     </form>
   </section>
 
@@ -45,6 +58,7 @@
   <main id="painel" class="painel" data-vista="sala" hidden>
     <header class="topo">
       <div class="marca">
+        <svg class="estrela estrela-marca" aria-hidden="true"><use href="#estrela-pt"/></svg>
         <span class="selo"><span class="ponto-vivo"></span> AO VIVO</span>
         <strong>Apuração 2026</strong>
         <span id="fonte" class="fonte"></span>

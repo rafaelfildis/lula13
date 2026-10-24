@@ -5,8 +5,8 @@
 // - câmera e microfone: WebRTC entre os navegadores via Trystero (sinalização por relays Nostr).
 
 import { joinRoom, selfId } from "https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm";
-import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js?v=202610241638";
-import { criarCanal } from "./lib/mensageiro.js?v=202610241638";
+import { descobrirEleicoes, buscarSnapshot } from "./lib/tse.js?v=202610241650";
+import { criarCanal } from "./lib/mensageiro.js?v=202610241650";
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, texto) => {

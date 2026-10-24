@@ -7,7 +7,24 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Apuração ao Vivo</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=202610241622">
+  <script>
+    // O GitHub Pages deixa o navegador reaproveitar esta página por até 10 min. Se ela estiver
+    // desatualizada, recarrega uma vez para todo mundo ficar na mesma versão do chat.
+    window.VERSAO_SITE = "202610241622";
+    fetch("versao.txt?t=" + Date.now(), { cache: "no-store" })
+      .then((r) => (r.ok ? r.text() : ""))
+      .then((v) => {
+        v = v.trim();
+        let recarregou = "";
+        try { recarregou = sessionStorage.getItem("recarregou-para") || ""; } catch {}
+        if (v && v !== window.VERSAO_SITE && recarregou !== v) {
+          try { sessionStorage.setItem("recarregou-para", v); } catch {}
+          location.reload();
+        }
+      })
+      .catch(() => {});
+  </script>
 </head>
 <body>
   <!-- Entrada: só o nome, sem cadastro -->
@@ -92,6 +109,6 @@
   </main>
 
   <div id="aviso" class="aviso" role="status" hidden></div>
-  <script src="app.js" type="module"></script>
+  <script src="app.js?v=202610241622" type="module"></script>
 </body>
 </html>

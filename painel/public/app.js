@@ -29,10 +29,21 @@ const INTERVALO_TSE = 30000;
 const MAX_CAMERAS = 8; // malha P2P: acima disso cada navegador envia vídeo demais
 const PRESENCA_MS = 15000; // cada um avisa "estou aqui" a cada 15 s
 const AUSENTE_MS = 45000; // sem aviso por 45 s = saiu
-// Servidor TURN: retransmite o vídeo quando a conexão direta entre redes falha (4G, CGNAT, Wi-Fi de empresa).
-// Crie uma conta gratuita (ex.: metered.ca/stun-turn) e preencha, por exemplo:
-//   [{ urls: ["turn:global.relay.metered.ca:80", "turns:global.relay.metered.ca:443?transport=tcp"], username: "...", credential: "..." }]
-const TURN = [];
+// Servidor TURN (Metered, app "lula13", credencial "lula13"): retransmite o vídeo quando a conexão direta
+// entre redes falha (4G, CGNAT, Wi-Fi de empresa). Fica visível no site; o risco é só alguém gastar a cota.
+// Para trocar: painel da Metered → TURN Server → Credentials.
+const TURN = [
+  {
+    urls: [
+      "turn:global.relay.metered.ca:80",
+      "turn:global.relay.metered.ca:80?transport=tcp",
+      "turn:global.relay.metered.ca:443",
+      "turns:global.relay.metered.ca:443?transport=tcp",
+    ],
+    username: "bd5414958c9a40666ff2c412",
+    credential: "q97RuwtMihZyWra5",
+  },
+];
 const AGUARDANDO = "Aguardando o início da apuração · divulgação a partir das 17h (Brasília)";
 
 const PALETA = ["#ef6a4c", "#3d8bfd", "#f5b83d", "#33c3a0", "#b07cf0", "#9aa5b1"];

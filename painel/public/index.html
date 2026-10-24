@@ -73,12 +73,17 @@
       <div class="social-topo">
         <div>
           <strong>Sala ao vivo</strong>
-          <span id="online" class="online"></span>
+          <button id="online" class="online" type="button" aria-expanded="false" aria-controls="lista-online"></button>
         </div>
         <div class="controles">
           <button id="btn-cam" class="btn-icone" title="Câmera" aria-pressed="false">📷</button>
           <button id="btn-mic" class="btn-icone" title="Microfone" aria-pressed="false">🎙️</button>
         </div>
+      </div>
+
+      <!-- Quem está na sala: abre ao clicar no contador -->
+      <div id="lista-online" class="lista-online" role="region" aria-label="Pessoas na sala" hidden>
+        <ul id="pessoas"></ul>
       </div>
 
       <div id="convite-midia" class="convite" hidden>

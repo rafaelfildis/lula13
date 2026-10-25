@@ -704,9 +704,11 @@ function blocoResultado(r, titulo) {
     const ps = el("span");
     ps.style.width = r.secoesPct + "%";
     prog.append(ps);
-    frag.append(el("div", "meta", r.totalizado ? "Totalizado" : `${fmtPct(r.secoesPct)}% das seções · ${r.atualizado?.split(" ")[1] ?? ""}`), prog);
+    const contagem = r.secoesTotal ? ` (${fmt(r.secoesApuradas)} de ${fmt(r.secoesTotal)})` : "";
+    frag.append(el("div", "meta", r.totalizado ? `Totalizado${contagem}` : `${fmtPct(r.secoesPct)}% das seções${contagem} · ${r.atualizado?.split(" ")[1] ?? ""}`), prog);
   } else {
-    frag.append(el("div", "meta", "Aguardando o início da apuração"));
+    const contagem = r.secoesTotal ? ` · 0 de ${fmt(r.secoesTotal)} seções` : "";
+    frag.append(el("div", "meta", `Aguardando o início da apuração${contagem}`));
   }
   const cands = comecou ? r.cands : [...r.cands].sort((a, b) => Number(a.numero) - Number(b.numero));
   for (const c of cands.slice(0, 6)) {
@@ -734,6 +736,7 @@ function renderDetalhe() {
   const uf = estado.sel;
   d.replaceChildren(el("h3", null, nomeUf(uf)));
   const pres = resultadoDe(uf, "presidente");
+  if (uf === "zz") d.append(el("div", "meta", "Votos de brasileiros que vivem fora do país. O TSE divulga junto com o Brasil, a partir das 17h (Brasília)."));
   if (iniciada(pres) && pres.comparecimentoPct) d.append(el("div", "meta", `Comparecimento ${fmtPct(pres.comparecimentoPct)}%`));
   d.append(blocoResultado(pres, "Presidente"));
   if (uf !== "br" && uf !== "zz") {

@@ -62,6 +62,8 @@ export function extrair(d) {
     atualizado: `${d.dg} ${d.hg}`,
     totalizado: d.tf === "s",
     secoesPct: num(d.s?.pst),
+    secoesApuradas: num(d.s?.st),
+    secoesTotal: num(d.s?.ts),
     eleitorado: num(d.e?.te),
     comparecimento: num(d.e?.c),
     comparecimentoPct: num(d.e?.pc),
